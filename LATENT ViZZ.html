@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Latent Space Vizzz</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden; /* Prevent scrollbars from appearing */
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        .ui-panel {
+            background-color: rgba(17, 24, 39, 0.8);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .btn-visualize {
+            background-color: #4f46e5;
+            transition: background-color 0.3s ease;
+        }
+        .btn-visualize:hover {
+            background-color: #6366f1;
+        }
+        .btn-visualize:disabled {
+            background-color: #4b5563;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body class="bg-gray-800 text-white">
+
+    <!-- Main Container -->
+    <div id="container" class="relative w-screen h-screen">
+        <canvas id="c"></canvas>
+    </div>
+
+    <!-- UI Panel -->
+    <div class="absolute top-0 left-0 p-4 md:p-6 h-full w-full md:w-96 flex flex-col">
+        <div class="ui-panel rounded-xl p-6 shadow-2xl flex-grow flex flex-col">
+            <div class="flex-grow">
+                <h1 class="text-2xl font-bold text-indigo-400">Latent Space</h1>
+                <p class="mt-2 text-gray-300 text-sm">
+                    This is a simplified visualization of a "latent space," a concept from AI and machine learning. Imagine this cube as a library of all possible meanings. Each point represents a concept or an "embedding."
+                </p>
+                <p class="mt-3 text-gray-300 text-sm">
+                    Points with similar colors are conceptually related.
+                </p>
+
+                <div class="mt-8">
+                    <label for="text-input" class="block text-sm font-medium text-gray-200">Enter a word or sentence:</label>
+                    <div class="mt-2 flex rounded-md shadow-sm">
+                        <input type="text" id="text-input" class="block w-full rounded-l-md border-0 bg-white/5 py-2 px-3 text-white ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm" placeholder="e.g., king or a long journey">
+                        <button id="visualize-btn" class="relative inline-flex items-center gap-x-1.5 rounded-r-md px-4 py-2 text-sm font-semibold text-white btn-visualize ml-2">
+                            Visualize
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="status-message" class="mt-4 text-center text-indigo-300 h-5 text-sm"></div>
+
+            <div class="text-xs text-gray-500 mt-4 border-t border-white/10 pt-4">
+                <p><strong>Controls:</strong></p>
+                <p>Drag to rotate. Scroll to zoom. Middle-click drag to pan.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Three.js and helpers -->
+    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import * as TWEEN from 'https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/libs/tween.module.min.js';
+        // Import modules for thick lines
+        import { Line2 } from 'three/addons/lines/Line2.js';
+        import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+        import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+
+        // --- DOM Elements ---
+        const canvas = document.getElementById('c');
+        const textInput = document.getElementById('text-input');
+        const visualizeBtn = document.getElementById('visualize-btn');
+        const statusMessage = document.getElementById('status-message');
+
+        // --- Scene Setup ---
+        let scene, camera, renderer, controls;
+        let points, pointPositions = [];
+        let highlightObject = null; // Will hold the line, sphere, or a group of them
+
+        // --- Constants ---
+        const CUBE_SIZE = 10;
+        const POINT_DENSITY = 15;
+        const POINT_SIZE = 0.1;
+
+        function init() {
+            // Scene
+            scene = new THREE.Scene();
+            // MODIFICATION: Changed fog to match new, lighter background
+            scene.fog = new THREE.FogExp2(0x1f2937, 0.05);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(CUBE_SIZE * 1.5, CUBE_SIZE * 1.5, CUBE_SIZE * 1.5);
+            
+            // Controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.target.set(0, 0, 0);
+            controls.maxDistance = CUBE_SIZE * 5;
+            controls.minDistance = CUBE_SIZE * 0.2;
+
+            controls.mouseButtons = {
+                LEFT: THREE.MOUSE.ROTATE,
+                MIDDLE: THREE.MOUSE.PAN,
+                RIGHT: THREE.MOUSE.DOLLY
+            };
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            const pointLight = new THREE.PointLight(0xffffff, 0.8);
+            camera.add(pointLight);
+            scene.add(camera);
+
+            // Create the main point cloud
+            createPointCube();
+
+            // Add a wireframe box to outline the cube
+            const boxGeom = new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE);
+            const edges = new THREE.EdgesGeometry(boxGeom);
+            const lineMaterial = new THREE.LineBasicMaterial({ color: 0x4b5563, transparent: true, opacity: 0.75 });
+            const wireframe = new THREE.LineSegments(edges, lineMaterial);
+            scene.add(wireframe);
+
+            // Event Listeners
+            window.addEventListener('resize', onWindowResize);
+            visualizeBtn.addEventListener('click', onVisualize);
+            textInput.addEventListener('keyup', (e) => {
+                if (e.key === 'Enter') {
+                    onVisualize();
+                }
+            });
+
+            animate();
+        }
+
+        function createPointCube() {
+            const positions = [];
+            const colors = [];
+            const geometry = new THREE.BufferGeometry();
+            const step = CUBE_SIZE / POINT_DENSITY;
+            const offset = -CUBE_SIZE / 2;
+
+            for (let x = 0; x <= POINT_DENSITY; x++) {
+                for (let y = 0; y <= POINT_DENSITY; y++) {
+                    for (let z = 0; z <= POINT_DENSITY; z++) {
+                        const posX = offset + x * step;
+                        const posY = offset + y * step;
+                        const posZ = offset + z * step;
+
+                        positions.push(posX, posY, posZ);
+                        pointPositions.push(new THREE.Vector3(posX, posY, posZ));
+                        
+                        const color = new THREE.Color();
+                        color.setRGB(
+                            (x / POINT_DENSITY) * 0.6 + 0.2, 
+                            (y / POINT_DENSITY) * 0.6 + 0.2, 
+                            (z / POINT_DENSITY) * 0.7 + 0.3
+                        );
+                        colors.push(color.r, color.g, color.b);
+                    }
+                }
+            }
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            const material = new THREE.PointsMaterial({
+                size: POINT_SIZE,
+                vertexColors: true,
+                sizeAttenuation: true,
+                transparent: true,
+                opacity: 1.0
+            });
+
+            points = new THREE.Points(geometry, material);
+            scene.add(points);
+        }
+
+        function onVisualize() {
+            const text = textInput.value.trim();
+            
+            if (points) {
+                points.material.opacity = 1.0;
+            }
+
+            if (highlightObject) {
+                if (highlightObject.isGroup) {
+                    highlightObject.children.forEach(child => {
+                        child.geometry.dispose();
+                        if (child.material) {
+                           child.material.dispose();
+                        }
+                    });
+                } else {
+                    highlightObject.geometry.dispose();
+                    if (highlightObject.material) {
+                        highlightObject.material.dispose();
+                    }
+                }
+                scene.remove(highlightObject);
+                highlightObject = null;
+            }
+            
+            if (!text) {
+                statusMessage.textContent = '';
+                return;
+            }
+
+            if (points) {
+                points.material.opacity = 0.45;
+            }
+
+            const words = text.split(/\s+/).filter(Boolean);
+
+            if (words.length === 1) {
+                visualizeWord(words[0]);
+            } else {
+                visualizeSentence(words);
+            }
+        }
+
+        function getRandomPoint() {
+            const index = Math.floor(Math.random() * pointPositions.length);
+            return pointPositions[index];
+        }
+
+        function findNeighbors(centerPoint, radius) {
+            const neighbors = [];
+            const radiusSq = radius * radius;
+            for (const point of pointPositions) {
+                if (point.equals(centerPoint)) continue;
+
+                if (point.distanceToSquared(centerPoint) < radiusSq) {
+                    neighbors.push(point);
+                }
+            }
+            return neighbors;
+        }
+
+        function visualizeWord(word) {
+            statusMessage.textContent = `Visualizing concept for "${word}"...`;
+            const targetPoint = getRandomPoint();
+            
+            const highlightGroup = new THREE.Group();
+
+            // Main sphere
+            const geometry = new THREE.SphereGeometry(0.2, 32, 32);
+            const material = new THREE.MeshStandardMaterial({ 
+                color: 0x34d399,
+                emissive: 0x34d399,
+                emissiveIntensity: 1,
+                metalness: 0,
+                roughness: 0.5
+            });
+            const sphere = new THREE.Mesh(geometry, material);
+            sphere.position.copy(targetPoint);
+            highlightGroup.add(sphere);
+
+            const neighborRadius = (CUBE_SIZE / POINT_DENSITY) * 1.75;
+            const neighbors = findNeighbors(targetPoint, neighborRadius);
+            
+            neighbors.forEach(point => {
+                const neighborGeom = new THREE.SphereGeometry(0.08, 8, 8);
+                const neighborMat = new THREE.MeshStandardMaterial({
+                    color: 0x2dd4bf,
+                    emissive: 0x2dd4bf,
+                    emissiveIntensity: 1,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                const neighborSphere = new THREE.Mesh(neighborGeom, neighborMat);
+                neighborSphere.userData.isNeighbor = true;
+                neighborSphere.position.copy(point);
+                highlightGroup.add(neighborSphere);
+            });
+
+            scene.add(highlightGroup);
+            highlightObject = highlightGroup;
+
+            animateCameraToPoint(targetPoint);
+        }
+
+        function visualizeSentence(words) {
+            statusMessage.textContent = `Visualizing vector for "${words.join(' ')}"...`;
+            
+            const highlightGroup = new THREE.Group();
+
+            const pathPoints = [];
+            for (let i = 0; i < words.length; i++) {
+                pathPoints.push(getRandomPoint());
+            }
+            
+            const neighborRadius = (CUBE_SIZE / POINT_DENSITY) * 1.75;
+
+            pathPoints.forEach(point => {
+                // Main green sphere
+                const geometry = new THREE.SphereGeometry(0.15, 32, 32);
+                const material = new THREE.MeshStandardMaterial({ 
+                    color: 0x34d399,
+                    emissive: 0x34d399,
+                    emissiveIntensity: 1,
+                    metalness: 0,
+                    roughness: 0.5
+                });
+                const sphere = new THREE.Mesh(geometry, material);
+                sphere.position.copy(point);
+                highlightGroup.add(sphere);
+
+                const neighbors = findNeighbors(point, neighborRadius);
+                neighbors.forEach(neighborPoint => {
+                    const neighborGeom = new THREE.SphereGeometry(0.08, 8, 8);
+                    const neighborMat = new THREE.MeshStandardMaterial({
+                        color: 0x2dd4bf,
+                        emissive: 0x2dd4bf,
+                        emissiveIntensity: 1,
+                        transparent: true,
+                        opacity: 0.8
+                    });
+                    const neighborSphere = new THREE.Mesh(neighborGeom, neighborMat);
+                    neighborSphere.userData.isNeighbor = true;
+                    neighborSphere.position.copy(neighborPoint);
+                    highlightGroup.add(neighborSphere);
+                });
+            });
+
+            const curve = new THREE.CatmullRomCurve3(pathPoints);
+            const pointsOnCurve = curve.getPoints(50 * words.length);
+
+            const positions = [];
+            pointsOnCurve.forEach(p => positions.push(p.x, p.y, p.z));
+            const lineGeometry = new LineGeometry();
+            lineGeometry.setPositions(positions);
+
+            const lineMaterial = new LineMaterial({
+                color: 0xfbbf24,
+                linewidth: 5, 
+                transparent: true,
+                opacity: 1.0
+            });
+            lineMaterial.resolution.set(window.innerWidth, window.innerHeight);
+
+            const line = new Line2(lineGeometry, lineMaterial);
+            line.computeLineDistances();
+            
+            highlightGroup.add(line);
+            
+            scene.add(highlightGroup);
+            highlightObject = highlightGroup;
+
+            if (pathPoints.length > 0) {
+                animateCameraToPoint(pathPoints[0]);
+            }
+        }
+
+        function animateCameraToPoint(targetPosition) {
+            const offset = CUBE_SIZE * 0.5;
+            const cameraEndPosition = new THREE.Vector3(
+                targetPosition.x + offset,
+                targetPosition.y + offset,
+                targetPosition.z + offset
+            );
+
+            new TWEEN.Tween(camera.position)
+                .to(cameraEndPosition, 1500)
+                .easing(TWEEN.Easing.Quadratic.Out)
+                .start();
+
+            new TWEEN.Tween(controls.target)
+                .to(targetPosition, 1500)
+                .easing(TWEEN.Easing.Quadratic.Out)
+                .start();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            if (highlightObject && highlightObject.isGroup) {
+                const line = highlightObject.children.find(child => child.isLine2);
+                if (line) {
+                    line.material.resolution.set(window.innerWidth, window.innerHeight);
+                }
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            TWEEN.update();
+            controls.update();
+
+            const time = performance.now() * 0.002;
+
+            if (highlightObject) {
+                if (highlightObject.isGroup) {
+                    highlightObject.children.forEach(child => {
+                        if (child.isLine2) {
+                            child.material.opacity = 0.6 + Math.sin(time * 1.5) * 0.4;
+                        } else if (child.isMesh) {
+                            if (child.userData.isNeighbor) {
+                                const glow = 0.5 + Math.sin(time + child.position.y) * 0.5;
+                                child.material.opacity = glow;
+                                child.material.emissiveIntensity = glow;
+                            } else {
+                                const scale = 1 + Math.sin(time * 1.2 + child.position.x) * 0.3;
+                                child.scale.set(scale, scale, scale);
+                                child.material.emissiveIntensity = 1.5 + Math.sin(time * 1.2 + child.position.x) * 1.0;
+                            }
+                        }
+                    });
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</body>
+</html>
