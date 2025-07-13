@@ -1,6 +1,8 @@
 # ViZZ
 Visual explanation of how tokens are being represented and addressed as embeddings inside the latent space.
 
+<img width="1794" height="872" alt="image" src="https://github.com/user-attachments/assets/520d6555-8deb-4c85-8f39-441275d77ee7" />
+
 Human visual perception of concepts cannot span across more than XYZ Dimentions. 
 As a result - A visualization of complex spaces with N Dimentions (for example 700 dimentions) is rather difficult for us to grasp.
 So what happends if we would like to show an example of how tokens are being represented as embeddings inisde a latent space?
